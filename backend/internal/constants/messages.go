@@ -17,6 +17,22 @@ const (
 	MsgWrongBookAdded        = "已加入错题本"
 	MsgWrongBookResolved     = "已标记为已掌握"
 
+	// 成绩复核模块文案（状态机 pending/approved/rejected，角色 student/teacher）
+	MsgReviewCreated       = "成绩复核申请已提交，等待教师处理"
+	MsgReviewApproved      = "复核已受理，成绩已按意见处理"
+	MsgReviewRejected      = "复核已驳回"
+	MsgReviewNotFound      = "成绩复核模块：id=%s 的复核申请不存在（角色 %s 无权查看或申请不存在）"
+	MsgReviewExists        = "成绩复核模块：record_id=%s 的答卷已有复核申请，每份答卷仅允许一次（角色 student）"
+	MsgReviewPendingExists = "成绩复核模块：record_id=%s 的答卷存在待处理复核申请，禁止重复提交（角色 student）"
+	MsgReviewWindowClosed  = "成绩复核模块：record_id=%s 已超过批改完成后 48 小时复核窗口，申请被拒绝（角色 student）"
+	MsgReviewNotGraded     = "成绩复核模块：record_id=%s 的答卷尚未批改完成（状态 %s），无法申请复核（角色 student）"
+	MsgReviewStatusInvalid = "成绩复核模块：id=%s 的申请状态 %s 非法，仅待处理申请可受理/驳回（角色 %s）"
+	MsgReviewOpinionEmpty  = "成绩复核模块：处理意见字段 opinion 不能为空（角色 %s）"
+	MsgReviewScoreRange    = "成绩复核模块：更正总分字段 corrected_score=%v 超出 [0,%v] 范围（角色 teacher）"
+	MsgReviewRecordLocked  = "成绩复核模块：record_id=%s 的答卷处于复核流程中，普通批改通道锁定（角色 teacher）"
+	MsgReviewForbidden     = "成绩复核模块：角色 %s 无权操作该复核申请"
+	MsgReviewReasonEmpty   = "成绩复核模块：申请理由字段 reason 不能为空（角色 student）"
+
 	// 错误提示文案（与 error_codes.go 对应，但由 service/handler 手动拼接实体名、字段名、角色名）
 	MsgValidationFailed    = "参数校验失败：字段 %s 不符合要求"
 	MsgUserEmailExists     = "用户模块：邮箱字段 %s 已被注册"

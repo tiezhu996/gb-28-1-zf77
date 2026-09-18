@@ -95,13 +95,58 @@ export interface ExamRecord {
   status: string;
   started_at: string;
   submitted_at?: string | null;
+  graded_at?: string | null;
   objective_score: number;
   subjective_score: number;
   final_score: number;
   pass_score: number;
+  is_passed: boolean;
+  score_corrected: boolean;
   cheat_count: number;
   auto_submitted: boolean;
   questions: AttemptQuestion[];
+  review_id: string;
+  review_status: string;
+  review_deadline?: string | null;
+  review_window_open: boolean;
+  created_at: string;
+}
+
+export interface ReviewHistoryItem {
+  action: string;
+  action_text: string;
+  operator_id: string;
+  operator_name: string;
+  operator_role: string;
+  opinion: string;
+  from_status: string;
+  to_status: string;
+  original_score: number;
+  corrected_score: number;
+  occurred_at: string;
+}
+
+export interface ScoreReview {
+  id: string;
+  record_id: string;
+  exam_id: string;
+  exam_title: string;
+  student_id: string;
+  student_name: string;
+  status: string;
+  status_text: string;
+  reason: string;
+  original_score: number;
+  original_passed: boolean;
+  score_corrected: boolean;
+  corrected_score: number;
+  corrected_passed: boolean;
+  teacher_opinion: string;
+  teacher_id: string;
+  teacher_name: string;
+  history: ReviewHistoryItem[];
+  deadline: string;
+  processed_at?: string | null;
   created_at: string;
 }
 
@@ -155,4 +200,8 @@ export interface ExamReport {
     correct_count: number;
     accuracy: number;
   }[];
+  review_pending_count: number;
+  review_approved_count: number;
+  review_rejected_count: number;
+  review_corrected_count: number;
 }

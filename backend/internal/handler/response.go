@@ -54,7 +54,9 @@ func httpStatusFromCode(code int) int {
 	switch code {
 	case constants.CodeBadRequest, constants.CodeValidationFailed, constants.CodeQuestionTypeErr,
 		constants.CodeUserInvalidRole, constants.CodeExamStatusErr, constants.CodeExamNotInWindow,
-		constants.CodeRecordStatusErr, constants.CodeRecordExpired:
+		constants.CodeRecordStatusErr, constants.CodeRecordExpired,
+		constants.CodeReviewWindowClosed, constants.CodeReviewNotGraded, constants.CodeReviewStatusErr,
+		constants.CodeReviewOpinionEmpty, constants.CodeReviewScoreOutOfRange, constants.CodeReviewRecordLocked:
 		return http.StatusBadRequest
 	case constants.CodeUnauthorized:
 		return http.StatusUnauthorized
@@ -62,10 +64,11 @@ func httpStatusFromCode(code int) int {
 		return http.StatusForbidden
 	case constants.CodeNotFound, constants.CodeUserNotFound, constants.CodeQuestionNotFound,
 		constants.CodeExamNotFound, constants.CodeRecordNotFound, constants.CodeWrongBookNotFound,
-		constants.CodeAuditNotFound:
+		constants.CodeAuditNotFound, constants.CodeReviewNotFound:
 		return http.StatusNotFound
 	case constants.CodeConflict, constants.CodeDuplicateKey, constants.CodeUserEmailExists,
-		constants.CodeRecordAlreadyDone, constants.CodeWrongBookExists:
+		constants.CodeRecordAlreadyDone, constants.CodeWrongBookExists,
+		constants.CodeReviewExists, constants.CodeReviewPendingExists:
 		return http.StatusConflict
 	case constants.CodeRateLimited:
 		return http.StatusTooManyRequests

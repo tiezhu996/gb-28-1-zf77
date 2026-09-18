@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -22,7 +23,19 @@ type ExamRecordRepository interface {
 	List(ctx context.Context, filter bson.M, page, pageSize int64) ([]*model.ExamRecord, int64, error)
 	ListAll(ctx context.Context, filter bson.M) ([]*model.ExamRecord, error)
 	CountByExamAndStatus(ctx context.Context, examID primitive.ObjectID, statuses []string) (int64, error)
+
+	// AttachPendingReview 原子地把待处理复核单挂到答卷上（仅当答卷尚无任何复核单）。
+	// 条件过滤 review_status 不存在/为 none 杜绝并发重复申请；MatchedCount==0 返回 ErrConflict。
+	AttachPendingReview(ctx context.Context, recordID, reviewID primitive.ObjectID) error
+	// ApplyReviewResult 原子地写回复核处理结果（仅当答卷当前挂着该 pending 复核单）。
+	// 审批（approved）时更新最终分、及格快照与更正标记；驳回（rejected）时只更新复核状态。
+	ApplyReviewResult(ctx context.Context, recordID, reviewID primitive.ObjectID, reviewStatus string, correctedScore *float64) error
 }
+
+// reviewStatusNone / reviewStatusPending 与 constants 中复核枚举保持同步
+// （repository 不直接依赖 constants，沿用 modelStatusInProgress 的硬编码约定）。
+func reviewStatusNone() string    { return "none" }
+func reviewStatusPending() string { return "pending" }
 
 // MongoExamRecordRepository MongoDB 考试记录仓储实现。
 type MongoExamRecordRepository struct {
@@ -130,4 +143,63 @@ func (r *MongoExamRecordRepository) CountByExamAndStatus(ctx context.Context, ex
 // 注意：该状态枚举同时在 constants/enums.go、service 状态机、formatters、前端 constants 中出现。
 func modelStatusInProgress() string {
 	return "in_progress"
+}
+
+// AttachPendingReview 条件更新：仅当答卷不存在任何复核关联时挂上 pending 复核单。
+// 使用 $or 兼容历史数据（review_status 字段缺失）与显式 none 两种形态。
+func (r *MongoExamRecordRepository) AttachPendingReview(ctx context.Context, recordID, reviewID primitive.ObjectID) error {
+	res, err := r.coll.UpdateOne(ctx,
+		bson.M{
+			"_id": recordID,
+			"$or": bson.A{
+				bson.M{"review_id": primitive.NilObjectID},
+				bson.M{"review_id": bson.M{"$exists": false}},
+				bson.M{"review_status": ""},
+				bson.M{"review_status": reviewStatusNone()},
+			},
+		},
+		bson.M{
+			"$set": bson.M{
+				"review_id":     reviewID,
+				"review_status": reviewStatusPending(),
+				"updated_at":    time.Now(),
+			},
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("attach pending review: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("attach pending review: %w", ErrConflict)
+	}
+	return nil
+}
+
+// ApplyReviewResult 条件更新：仅当答卷挂着同一个 pending 复核单时写回处理结果。
+// 任何越权/重复处理（复核单不匹配或状态已迁移）都会 MatchedCount==0 → ErrConflict，
+// 原成绩不会被改变。
+func (r *MongoExamRecordRepository) ApplyReviewResult(ctx context.Context, recordID, reviewID primitive.ObjectID, reviewStatus string, correctedScore *float64) error {
+	set := bson.M{
+		"review_status": reviewStatus,
+		"updated_at":    time.Now(),
+	}
+	if correctedScore != nil {
+		set["final_score"] = *correctedScore
+		set["score_corrected"] = true
+	}
+	res, err := r.coll.UpdateOne(ctx,
+		bson.M{
+			"_id":           recordID,
+			"review_id":     reviewID,
+			"review_status": reviewStatusPending(),
+		},
+		bson.M{"$set": set},
+	)
+	if err != nil {
+		return fmt.Errorf("apply review result: %w", err)
+	}
+	if res.MatchedCount == 0 {
+		return fmt.Errorf("apply review result: %w", ErrConflict)
+	}
+	return nil
 }

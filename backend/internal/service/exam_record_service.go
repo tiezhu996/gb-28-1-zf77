@@ -19,16 +19,37 @@ import (
 	"github.com/onlineexam/onlineexam/internal/util"
 )
 
-// ExamRecordService 考试记录服务：开始考试、提交/自动提交、阅卷、成绩分析。
+// ExamRecordService 考试记录服务：开始考试、提交/自动提交、阅卷、成绩分析、成绩复核联动。
 type ExamRecordService struct {
 	repo   repository.ExamRecordRepository
-	exam   *ExamService // 复用试卷服务（校验考试窗口）
+	exam   *ExamService // 复用试卷服务（校验考试窗口、及格线快照）
 	logger *slog.Logger
 }
 
 // NewExamRecordService 构造考试记录服务。
 func NewExamRecordService(repo repository.ExamRecordRepository, exam *ExamService, logger *slog.Logger) *ExamRecordService {
 	return &ExamRecordService{repo: repo, exam: exam, logger: logger}
+}
+
+// passScoreOf 及格线：优先答卷快照，回退试卷当前配置。
+func passScoreOf(rec *model.ExamRecord, exam *model.Exam) float64 {
+	if rec.PassScore > 0 {
+		return rec.PassScore
+	}
+	return exam.PassScore
+}
+
+// gradingCompleted 判断答卷是否已批改完成（复核申请的前置条件）。
+func gradingCompleted(rec *model.ExamRecord) bool {
+	return rec.Status == constants.RecordStatusGraded
+}
+
+// reviewWindowBase 复核窗口起点：优先 GradedAt，历史数据回退 SubmittedAt。
+func reviewWindowBase(rec *model.ExamRecord) *time.Time {
+	if rec.GradedAt != nil {
+		return rec.GradedAt
+	}
+	return rec.SubmittedAt
 }
 
 // StartExam 学生开始考试：校验时间窗口、生成随机题序/选项快照。
@@ -92,6 +113,7 @@ func (s *ExamRecordService) StartExam(ctx context.Context, examID, studentID pri
 		StudentName: studentName,
 		Questions:   questions,
 		Status:      constants.RecordStatusInProgress,
+		PassScore:   exam.PassScore, // 及格线快照：复核更正及格状态以此为准
 		StartedAt:   now,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -207,6 +229,11 @@ func (s *ExamRecordService) Grade(ctx context.Context, recordID primitive.Object
 	if rec.Status != constants.RecordStatusSubmitted && rec.Status != constants.RecordStatusGraded {
 		return nil, util.NewAppError(constants.CodeRecordStatusErr, fmt.Sprintf(constants.MsgRecordStatusInvalid, rec.Status))
 	}
+	// 复核闭环：答卷一旦存在复核申请（待处理或已处理），普通批改通道锁定，
+	// 分数只能通过复核受理动作更正，任何重复批改/越权操作都不能改变（复核后的）原成绩。
+	if rec.ReviewStatus != "" || rec.ReviewID != primitive.NilObjectID {
+		return nil, util.NewAppError(constants.CodeReviewRecordLocked, fmt.Sprintf(constants.MsgReviewRecordLocked, recordID.Hex()))
+	}
 	gradeMap := make(map[string]dto.GradeItem, len(grades))
 	for _, g := range grades {
 		gradeMap[g.QuestionID] = g
@@ -229,7 +256,11 @@ func (s *ExamRecordService) Grade(ctx context.Context, recordID primitive.Object
 	rec.SubjectiveScore = subjectiveTotal
 	rec.FinalScore = rec.ObjectiveScore + subjectiveTotal
 	rec.Status = constants.RecordStatusGraded
-	rec.UpdatedAt = time.Now()
+	now := time.Now()
+	if rec.GradedAt == nil {
+		rec.GradedAt = &now // 批改完成时间：复核 48h 窗口起点
+	}
+	rec.UpdatedAt = now
 	if err := s.repo.Update(ctx, rec); err != nil {
 		return nil, fmt.Errorf("exam record service grade: %w", err)
 	}
@@ -269,6 +300,20 @@ func (s *ExamRecordService) GetByID(ctx context.Context, id primitive.ObjectID) 
 	return rec, nil
 }
 
+// GetForViewer 查询答卷并做越权校验：学生只能查看本人答卷，教师/管理员可查看全部。
+// 防止学生通过篡改 recordId 查看他人答卷或对他人成绩发起复核。
+func (s *ExamRecordService) GetForViewer(ctx context.Context, id, viewerID primitive.ObjectID, role string) (*model.ExamRecord, error) {
+	rec, err := s.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if role == constants.RoleStudent && rec.StudentID != viewerID {
+		s.logger.Warn("越权访问答卷被拒绝", "record_id", id.Hex(), "viewer", viewerID.Hex(), "role", role)
+		return nil, util.NewAppError(constants.CodeForbidden, constants.MsgForbidden)
+	}
+	return rec, nil
+}
+
 // Report 生成成绩分析报告（平均分/最高/最低/及格率/分数段/每题正确率）。
 func (s *ExamRecordService) Report(ctx context.Context, examID primitive.ObjectID) (*dto.ExamReport, error) {
 	exam, err := s.exam.GetByID(ctx, examID)
@@ -280,9 +325,9 @@ func (s *ExamRecordService) Report(ctx context.Context, examID primitive.ObjectI
 		return nil, fmt.Errorf("exam record service report: %w", err)
 	}
 	report := &dto.ExamReport{
-		ExamID:       examID.Hex(),
-		ExamTitle:    exam.Title,
-		ScoreBands:   map[string]int{"0-59": 0, "60-69": 0, "70-79": 0, "80-89": 0, "90-100": 0},
+		ExamID:          examID.Hex(),
+		ExamTitle:       exam.Title,
+		ScoreBands:      map[string]int{"0-59": 0, "60-69": 0, "70-79": 0, "80-89": 0, "90-100": 0},
 		QuestionReports: make([]dto.ExamReportItem, 0, len(exam.Questions)),
 	}
 	if len(recs) == 0 {
@@ -294,6 +339,7 @@ func (s *ExamRecordService) Report(ctx context.Context, examID primitive.ObjectI
 	minScore := -1.0
 	passCount := 0
 	for _, r := range recs {
+		// 复核受理更正后 FinalScore 已是最终分，统计天然以复核后的分数为准
 		score := r.FinalScore
 		if score <= 0 && r.Status == constants.RecordStatusSubmitted {
 			score = r.ObjectiveScore
@@ -307,11 +353,25 @@ func (s *ExamRecordService) Report(ctx context.Context, examID primitive.ObjectI
 		if minScore < 0 || score < minScore {
 			minScore = score
 		}
-		if score >= exam.PassScore && exam.PassScore > 0 {
+		// 及格状态只统计批改完成的答卷；复核更正后以更正后的最终分与快照及格线判定
+		if r.Status == constants.RecordStatusGraded && passScoreOf(r, exam) > 0 && score >= passScoreOf(r, exam) {
 			passCount++
 		}
 		band := scoreBand(score)
 		report.ScoreBands[band]++
+
+		// 成绩复核闭环统计
+		switch r.ReviewStatus {
+		case constants.ReviewStatusPending:
+			report.ReviewPendingCount++
+		case constants.ReviewStatusApproved:
+			report.ReviewApprovedCount++
+			if r.ScoreCorrected {
+				report.ReviewCorrectedCount++
+			}
+		case constants.ReviewStatusRejected:
+			report.ReviewRejectedCount++
+		}
 	}
 	report.TotalStudents = len(recs)
 	report.AverageScore = round2(sum / float64(len(recs)))

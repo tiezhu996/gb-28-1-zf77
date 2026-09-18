@@ -5,6 +5,7 @@ import {
   EXAM_STATUS,
   QUESTION_TYPES,
   RECORD_STATUS,
+  REVIEW_STATUS,
   ROLES,
   USER_STATUS,
 } from '@/constants';
@@ -97,5 +98,35 @@ export function recordStatusColor(s: string): string {
     case RECORD_STATUS.SUBMITTED: return 'blue';
     case RECORD_STATUS.GRADED: return 'green';
     default: return 'gray';
+  }
+}
+
+// 成绩复核状态文案/颜色（pending/approved/rejected，与后端 formatters.ReviewStatusText 对应）
+export function reviewStatusText(s: string): string {
+  switch (s) {
+    case REVIEW_STATUS.NONE:
+    case '': return '未复核';
+    case REVIEW_STATUS.PENDING: return '复核中';
+    case REVIEW_STATUS.APPROVED: return '已受理';
+    case REVIEW_STATUS.REJECTED: return '已驳回';
+    default: return s;
+  }
+}
+
+export function reviewStatusColor(s: string): string {
+  switch (s) {
+    case REVIEW_STATUS.PENDING: return 'orange';
+    case REVIEW_STATUS.APPROVED: return 'green';
+    case REVIEW_STATUS.REJECTED: return 'red';
+    default: return 'gray';
+  }
+}
+
+export function reviewActionText(a: string): string {
+  switch (a) {
+    case 'review_submit': return '发起复核';
+    case 'review_approve': return '受理更正';
+    case 'review_reject': return '驳回';
+    default: return a;
   }
 }

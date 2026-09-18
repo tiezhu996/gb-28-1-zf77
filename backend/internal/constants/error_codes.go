@@ -46,6 +46,17 @@ const (
 
 	// 审计模块
 	CodeAuditNotFound = 7001 // 审计日志不存在
+
+	// 成绩复核模块（状态机 pending/approved/rejected）
+	CodeReviewNotFound        = 8001 // 复核申请不存在
+	CodeReviewExists          = 8002 // 该答卷已有复核申请（待处理或已处理，每卷仅允许一次）
+	CodeReviewPendingExists   = 8003 // 该答卷已有待处理复核申请
+	CodeReviewWindowClosed    = 8004 // 复核窗口已关闭（批改完成超过 48 小时）
+	CodeReviewNotGraded       = 8005 // 答卷尚未批改完成，不能申请复核
+	CodeReviewStatusErr       = 8006 // 复核申请状态非法（仅待处理可受理/驳回）
+	CodeReviewOpinionEmpty    = 8007 // 复核处理意见不能为空
+	CodeReviewScoreOutOfRange = 8008 // 更正总分超出 [0, 试卷总分] 范围
+	CodeReviewRecordLocked    = 8009 // 复核处理中，普通批改通道已锁定
 )
 
 // ErrorCodeText 返回错误码对应的默认文案（供 messages 与 handler 包装使用）。
@@ -109,6 +120,24 @@ func ErrorCodeText(code int) string {
 		return "错题已存在于错题本"
 	case CodeAuditNotFound:
 		return "审计日志不存在"
+	case CodeReviewNotFound:
+		return "成绩复核申请不存在"
+	case CodeReviewExists:
+		return "该答卷已发起过成绩复核，每份答卷仅允许一次"
+	case CodeReviewPendingExists:
+		return "该答卷已有待处理的成绩复核申请"
+	case CodeReviewWindowClosed:
+		return "复核窗口已关闭，须在批改完成后48小时内申请"
+	case CodeReviewNotGraded:
+		return "答卷尚未批改完成，暂不能申请成绩复核"
+	case CodeReviewStatusErr:
+		return "复核申请状态非法，仅待处理申请可受理或驳回"
+	case CodeReviewOpinionEmpty:
+		return "处理意见不能为空"
+	case CodeReviewScoreOutOfRange:
+		return "更正总分超出允许范围"
+	case CodeReviewRecordLocked:
+		return "该答卷存在成绩复核，普通批改已锁定，请在复核页处理"
 	default:
 		return "未知错误"
 	}

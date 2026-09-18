@@ -65,6 +65,37 @@ func (f *fakeRecordRepo) CountByExamAndStatus(_ context.Context, _ primitive.Obj
 	return int64(len(f.records)), nil
 }
 
+// AttachPendingReview 内存版原子挂载：无条件更新（单测串行执行）。
+func (f *fakeRecordRepo) AttachPendingReview(_ context.Context, recordID, reviewID primitive.ObjectID) error {
+	r, ok := f.records[recordID.Hex()]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	if r.ReviewStatus == constants.ReviewStatusPending {
+		return repository.ErrConflict
+	}
+	r.ReviewID = reviewID
+	r.ReviewStatus = constants.ReviewStatusPending
+	return nil
+}
+
+// ApplyReviewResult 内存版原子写回。
+func (f *fakeRecordRepo) ApplyReviewResult(_ context.Context, recordID, reviewID primitive.ObjectID, reviewStatus string, correctedScore *float64) error {
+	r, ok := f.records[recordID.Hex()]
+	if !ok {
+		return repository.ErrNotFound
+	}
+	if r.ReviewID != reviewID || r.ReviewStatus != constants.ReviewStatusPending {
+		return repository.ErrConflict
+	}
+	r.ReviewStatus = reviewStatus
+	if correctedScore != nil {
+		r.FinalScore = *correctedScore
+		r.ScoreCorrected = true
+	}
+	return nil
+}
+
 func newTestRecordSvc() *ExamRecordService {
 	questionRepo := newFakeQuestionRepo()
 	questionSvc := NewQuestionService(questionRepo, slog.New(slog.NewTextHandler(io.Discard, nil)))

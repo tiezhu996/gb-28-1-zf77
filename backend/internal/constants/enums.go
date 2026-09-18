@@ -3,6 +3,8 @@
 // service 状态机、handler 校验、日志模板、错误码、formatters 与前端 constants 中重复出现。
 package constants
 
+import "time"
+
 // 用户角色枚举（UserRole）。
 // 出现位置：model/user.go、dto/user.go、service/user_service.go、handler/user_handler.go、
 // middleware/rbac.go、constants/error_codes.go、constants/log_templates.go、util/formatters.go、
@@ -95,6 +97,11 @@ const (
 	AuditActionImport  = "import"
 	AuditActionPublish = "publish"
 	AuditActionExport  = "export"
+
+	// 成绩复核动作（复核状态机 pending/approved/rejected 联动审计模块）
+	AuditActionReviewSubmit  = ReviewActionSubmit
+	AuditActionReviewApprove = ReviewActionApprove
+	AuditActionReviewReject  = ReviewActionReject
 )
 
 // 判卷方式枚举（GradingMode）。
@@ -103,6 +110,29 @@ const (
 	GradingModeManual = "manual" // 人工批改（主观题）
 	GradingModeMixed  = "mixed"  // 混合
 )
+
+// 成绩复核状态枚举（ScoreReviewStatus）。
+// 出现位置：model/score_review.go、model/exam_record.go、dto/score_review.go、dto/exam_record.go、
+// service/score_review_service.go、service/exam_record_service.go、handler/score_review_handler.go、
+// constants/error_codes.go、constants/log_templates.go、constants/messages.go、util/formatters.go、
+// migrations/indexes.go、前端 src/constants/index.ts、src/utils/format.ts、src/components/StatusBadge.tsx、
+// src/app/records、src/app/records/review、src/app/score-reviews、src/app/reports。
+const (
+	ReviewStatusNone     = "none"     // 答卷上尚无复核（仅用于 exam_record.review_status 零值展示）
+	ReviewStatusPending  = "pending"  // 待处理
+	ReviewStatusApproved = "approved" // 已受理（可能更正分数，也可能维持原判）
+	ReviewStatusRejected = "rejected" // 已驳回
+)
+
+// 复核留痕动作枚举（ScoreReviewAction，同时写入审计日志 AuditAction）。
+const (
+	ReviewActionSubmit  = "review_submit"  // 学生发起复核
+	ReviewActionApprove = "review_approve" // 教师受理并更正
+	ReviewActionReject  = "review_reject"  // 教师驳回
+)
+
+// ReviewApplyWindow 学生可发起复核的时间窗口：批改完成后 48 小时。
+const ReviewApplyWindow = 48 * time.Hour
 
 // ExamStatus 状态机：合法的状态迁移。
 // 状态机规则同时存在于 service/exam_service.go、constants/error_codes.go、
@@ -120,6 +150,29 @@ var RecordStatusTransitions = map[string][]string{
 	RecordStatusInProgress: {RecordStatusSubmitted},
 	RecordStatusSubmitted:  {RecordStatusGraded},
 	RecordStatusGraded:     {},
+}
+
+// ReviewStatusTransitions 成绩复核状态机：待处理只能走向受理或驳回，终态不可再变。
+// 状态机规则同时存在于 service/score_review_service.go、constants/error_codes.go、
+// constants/log_templates.go、util/formatters.go、前端 src/constants/index.ts、src/app/records/review。
+var ReviewStatusTransitions = map[string][]string{
+	ReviewStatusPending:  {ReviewStatusApproved, ReviewStatusRejected},
+	ReviewStatusApproved: {},
+	ReviewStatusRejected: {},
+}
+
+// IsValidReviewStatus 校验复核状态是否合法。
+func IsValidReviewStatus(s string) bool {
+	switch s {
+	case ReviewStatusPending, ReviewStatusApproved, ReviewStatusRejected:
+		return true
+	}
+	return false
+}
+
+// CanReviewTransition 判断复核状态迁移是否合法（仅 pending → approved/rejected）。
+func CanReviewTransition(from, to string) bool {
+	return CanTransition(from, to, ReviewStatusTransitions)
 }
 
 // IsValidUserRole 校验角色是否合法。

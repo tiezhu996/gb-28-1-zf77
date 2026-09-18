@@ -57,6 +57,23 @@ export const RECORD_STATUS = {
 
 export type RecordStatus = (typeof RECORD_STATUS)[keyof typeof RECORD_STATUS];
 
+// 成绩复核状态（与后端 constants.ReviewStatus* 对应；状态机 pending → approved/rejected）
+export const REVIEW_STATUS = {
+  NONE: 'none',
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+} as const;
+
+export type ReviewStatus = (typeof REVIEW_STATUS)[keyof typeof REVIEW_STATUS];
+
+// 复核状态机：与后端 constants.ReviewStatusTransitions 对应（前端按钮显隐依赖此表）
+export const REVIEW_STATUS_TRANSITIONS: Record<string, string[]> = {
+  pending: ['approved', 'rejected'],
+  approved: [],
+  rejected: [],
+};
+
 export const ANSWER_RESULT = {
   CORRECT: 'correct',
   WRONG: 'wrong',

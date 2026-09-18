@@ -72,12 +72,44 @@ function ExamDetail() {
   const recordColumns: Column<ExamRecord>[] = [
     { key: 'student_name', title: '学生', render: (r) => <span>{r.student_name}</span> },
     { key: 'status', title: '状态', render: (r) => <StatusBadge text={r.status === 'graded' ? '已批改' : r.status === 'submitted' ? '已提交' : '答题中'} color={r.status === 'graded' ? 'green' : r.status === 'submitted' ? 'blue' : 'orange'} /> },
+    {
+      key: 'review_status',
+      title: '复核',
+      render: (r) =>
+        r.review_status && r.review_status !== 'none' ? (
+          <StatusBadge
+            text={r.review_status === 'pending' ? '复核中' : r.review_status === 'approved' ? '已受理' : '已驳回'}
+            color={r.review_status === 'pending' ? 'orange' : r.review_status === 'approved' ? 'green' : 'red'}
+          />
+        ) : (
+          <span className="text-xs text-gray-400">-</span>
+        ),
+    },
     { key: 'objective_score', title: '客观题分', render: (r) => <span>{r.objective_score}</span> },
-    { key: 'final_score', title: '最终分', render: (r) => <span className="font-medium">{r.final_score || '-'}</span> },
+    {
+      key: 'final_score',
+      title: '最终分',
+      render: (r) => (
+        <span>
+          <span className={`font-medium ${r.score_corrected ? 'text-orange-600' : ''}`}>{r.final_score || '-'}</span>
+          {r.score_corrected && <span className="ml-1 text-[10px] text-orange-500">已更正</span>}
+          {r.pass_score > 0 && r.status === 'graded' && (
+            <span className={`ml-1 text-[10px] ${r.is_passed ? 'text-green-600' : 'text-red-600'}`}>
+              {r.is_passed ? '及格' : '不及格'}
+            </span>
+          )}
+        </span>
+      ),
+    },
     { key: 'cheat_count', title: '切屏次数', render: (r) => <span className={r.cheat_count > 0 ? 'text-red-600' : ''}>{r.cheat_count}</span> },
     { key: 'started_at', title: '开始时间', render: (r) => <span className="text-xs">{formatDateTime(r.started_at)}</span> },
     { key: 'actions', title: '操作', render: (r) => (
-        <button onClick={() => router.push(`/records/review?recordId=${r.id}`)} className="text-brand-600 hover:underline">查看/批改</button>
+        <div className="flex gap-2">
+          <button onClick={() => router.push(`/records/review?recordId=${r.id}`)} className="text-brand-600 hover:underline">查看/批改</button>
+          {r.review_status === 'pending' && (
+            <button onClick={() => router.push(`/score-reviews?examId=${id}`)} className="text-orange-600 hover:underline">处理复核</button>
+          )}
+        </div>
       ) },
   ];
 

@@ -28,6 +28,13 @@ function Report() {
     { label: '及格率', value: `${report.pass_rate}%` },
   ];
 
+  const reviewStats = [
+    { label: '待处理复核', value: report.review_pending_count ?? 0, color: 'text-orange-600' },
+    { label: '已受理', value: report.review_approved_count ?? 0, color: 'text-green-600' },
+    { label: '已驳回', value: report.review_rejected_count ?? 0, color: 'text-red-600' },
+    { label: '受理并改分', value: report.review_corrected_count ?? 0, color: 'text-brand-600' },
+  ];
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold text-gray-800">成绩分析 · {report.exam_title}</h1>
@@ -39,6 +46,21 @@ function Report() {
             <p className="mt-1 text-2xl font-bold text-brand-600">{s.value}</p>
           </div>
         ))}
+      </section>
+
+      <section className="rounded-xl border border-gray-200 bg-white p-5">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-800">成绩复核统计</h2>
+          <p className="text-xs text-gray-400">平均分/及格率/分数段均以复核受理后的最终分为准</p>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {reviewStats.map((s) => (
+            <div key={s.label} className="rounded-lg bg-gray-50 p-3 text-center">
+              <p className="text-xs text-gray-400">{s.label}</p>
+              <p className={`mt-1 text-xl font-bold ${s.color}`}>{s.value}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
       <section className="rounded-xl border border-gray-200 bg-white p-5">

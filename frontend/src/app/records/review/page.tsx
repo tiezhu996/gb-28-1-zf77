@@ -4,10 +4,12 @@ import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { recordApi } from '@/api/record';
 import { wrongBookApi } from '@/api/wrongBook';
+import { scoreReviewApi } from '@/api/scoreReview';
 import { QuestionTypeBadge, StatusBadge } from '@/components/StatusBadge';
+import { ScoreReviewPanel } from '@/components/ScoreReviewPanel';
 import { answerResultText, formatDateTime, recordStatusColor, recordStatusText } from '@/utils/format';
 import { ANSWER_RESULT } from '@/constants';
-import type { ExamRecord } from '@/types';
+import type { ExamRecord, ScoreReview } from '@/types';
 
 function Review() {
   const params = useSearchParams();
@@ -16,6 +18,7 @@ function Review() {
   const canGrade = isTeacher || isAdmin;
 
   const [record, setRecord] = useState<ExamRecord | null>(null);
+  const [scoreReview, setScoreReview] = useState<ScoreReview | null>(null);
   const [scores, setScores] = useState<Record<string, number>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
   const [grading, setGrading] = useState(false);
@@ -33,6 +36,13 @@ function Review() {
     });
     setScores(sc);
     setComments(cm);
+    // 复核状态：无复核时接口返回 404，置 null
+    try {
+      const rv = await scoreReviewApi.getByRecord(recordId);
+      setScoreReview(rv);
+    } catch {
+      setScoreReview(null);
+    }
   }, [recordId]);
 
   useEffect(() => {
@@ -49,6 +59,10 @@ function Review() {
       default: return 'gray';
     }
   };
+
+  // 复核存在时普通批改通道锁定（后端同样强制），防止改分绕过复核流程
+  const reviewExists = !!scoreReview || record.review_status !== 'none';
+  const gradeLocked = reviewExists;
 
   const onGrade = async () => {
     setGrading(true);
@@ -84,12 +98,43 @@ function Review() {
         <div>
           <h1 className="text-xl font-bold text-gray-800">{record.exam_title} · 答卷详情</h1>
           <p className="mt-1 text-sm text-gray-500">
-            学生 {record.student_name} · 客观题 {record.objective_score} 分 · 最终 {record.final_score || '-'} 分 · 切屏 {record.cheat_count} 次
+            学生 {record.student_name} · 客观题 {record.objective_score} 分 · 最终{' '}
+            <span className={record.score_corrected ? 'font-semibold text-orange-600' : 'font-semibold'}>
+              {record.final_score || '-'}
+            </span>
+            {record.score_corrected && <span className="ml-1 text-xs text-orange-500">（复核已更正）</span>}
+            {' '}分
+            {record.pass_score > 0 && (
+              <span className={`ml-2 font-medium ${record.is_passed ? 'text-green-600' : 'text-red-600'}`}>
+                {record.is_passed ? '及格' : '不及格'}
+              </span>
+            )}
+            {' '}· 切屏 {record.cheat_count} 次
           </p>
-          <p className="text-xs text-gray-400">开始 {formatDateTime(record.started_at)}</p>
+          <p className="text-xs text-gray-400">
+            开始 {formatDateTime(record.started_at)}
+            {record.graded_at ? ` · 批改完成 ${formatDateTime(record.graded_at)}` : ''}
+          </p>
         </div>
-        <StatusBadge text={recordStatusText(record.status)} color={recordStatusColor(record.status)} />
+        <div className="flex items-center gap-2">
+          <StatusBadge text={recordStatusText(record.status)} color={recordStatusColor(record.status)} />
+          {record.review_status && record.review_status !== 'none' && (
+            <StatusBadge
+              text={record.review_status === 'pending' ? '复核中' : record.review_status === 'approved' ? '复核已受理' : '复核已驳回'}
+              color={record.review_status === 'pending' ? 'orange' : record.review_status === 'approved' ? 'green' : 'red'}
+            />
+          )}
+        </div>
       </div>
+
+      {/* 成绩复核闭环面板：学生申请、教师受理/驳回、全程留痕 */}
+      <ScoreReviewPanel record={record} review={scoreReview} onChanged={load} />
+
+      {gradeLocked && canGrade && (
+        <div className="rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-700">
+          该答卷存在成绩复核申请，普通批改通道已锁定。请在上方“成绩复核”面板中受理（可更正总分）或驳回；重复批改不会改变成绩。
+        </div>
+      )}
 
       {record.questions.map((q, i) => (
         <div key={q.question_id} className="rounded-xl border border-gray-200 bg-white p-5">
@@ -133,11 +178,13 @@ function Review() {
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <input type="number" min={0} max={q.score} step={0.5} value={scores[q.question_id] ?? ''}
                     placeholder="给分"
+                    disabled={gradeLocked}
                     onChange={(e) => setScores({ ...scores, [q.question_id]: Number(e.target.value) })}
-                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm" />
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:bg-gray-100" />
                   <input value={comments[q.question_id] ?? ''} placeholder="评语（可选）"
+                    disabled={gradeLocked}
                     onChange={(e) => setComments({ ...comments, [q.question_id]: e.target.value })}
-                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm" />
+                    className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:bg-gray-100" />
                 </div>
               )}
             </div>
@@ -159,7 +206,7 @@ function Review() {
         </div>
       ))}
 
-      {canGrade && record.status !== 'graded' && (
+      {canGrade && record.status !== 'graded' && !gradeLocked && (
         <div className="flex justify-end">
           <button onClick={onGrade} disabled={grading}
             className="rounded-lg bg-brand-600 px-6 py-2 text-sm text-white hover:bg-brand-700 disabled:opacity-60">

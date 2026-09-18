@@ -165,7 +165,14 @@ npm run dev                  # http://localhost:3000，/api 已代理到 localho
 | GET | /exams/:examId/records | 教师/管理员 | 某考试全部答卷 |
 | POST | /exam-records/:id/grade | 教师/管理员 | 主观题批改 |
 | POST | /exam-records/:id/auto-submit | 教师/管理员 | 超时自动提交 |
-| GET | /exams/:examId/report | 教师/管理员 | 成绩分析报告 |
+| GET | /exams/:examId/report | 教师/管理员 | 成绩分析报告（含复核统计） |
+| POST | /exam-records/:id/reviews | 学生 | 对本人已批改答卷发起一次成绩复核（批改完成 48h 内，理由必填） |
+| GET | /exam-records/:id/review | 学生/教师/管理员 | 按答卷查询复核详情（仅本人或教师） |
+| GET | /score-reviews/mine | 学生 | 我的复核申请 |
+| GET | /score-reviews | 教师/管理员 | 复核列表（status/exam_id 筛选） |
+| GET | /score-reviews/:id | 学生/教师/管理员 | 复核详情（学生仅限本人） |
+| POST | /score-reviews/:id/approve | 教师/管理员 | 受理复核并更正总分（opinion 必填，corrected_score 可选） |
+| POST | /score-reviews/:id/reject | 教师/管理员 | 驳回复核（opinion 必填，不得改分） |
 | GET | /wrong-books | 学生 | 错题本分页 |
 | POST | /wrong-books | 学生 | 加入错题本 |
 | GET | /wrong-books/:id | 学生 | 错题详情 |
@@ -173,7 +180,9 @@ npm run dev                  # http://localhost:3000，/api 已代理到 localho
 | DELETE | /wrong-books/:id | 学生 | 移除错题 |
 | GET | /audit-logs | 管理员 | 操作审计日志 |
 
-> 复用关系：`PUT /exams/:id` 与 `POST /exams/:id/publish` 复用 `ExamService.applyStatusTransition`；`POST /questions` 与 `POST /questions/import` 复用 `QuestionService.buildQuestionFromRow/validateQuestion`；`POST /exam-records/:id/submit` 与 `POST /exam-records/:id/auto-submit` 复用 `ExamRecordService.Submit/gradeObjective`。
+> 复用关系：`PUT /exams/:id` 与 `POST /exams/:id/publish` 复用 `ExamService.applyStatusTransition`；`POST /questions` 与 `POST /questions/import` 复用 `QuestionService.buildQuestionFromRow/validateQuestion`；`POST /exam-records/:id/submit` 与 `POST /exam-records/:id/auto-submit` 复用 `ExamRecordService.Submit/gradeObjective`；成绩分析报告 `/exams/:id/report`、答卷详情 `/exam-records/:id`、复核列表 `/score-reviews` 三处复用 `ToRecordResponse` 的复核状态/最终分字段，复核受理与驳回复用 `ScoreReviewService.Process` 同一状态机方法。
+>
+> 成绩复核闭环规则：① 学生仅可在批改完成（`graded_at`）后 48 小时内发起一次复核且必须填写理由；② 同一答卷只允许一条复核记录（待处理/已处理均不可再次申请），逾期或重复申请直接返回 8002/8003/8004 错误；③ 教师可驳回或受理，受理时可更正总分（及格状态按快照及格线自动重算），两种处理都必须填写意见；④ 申请、受理、驳回均写入 `score_reviews.history` 留痕并落 `audit_logs`；⑤ 复核存在期间普通批改接口锁定，任何重复提交或越权处理都不会改变原成绩（并发安全由 `record_id` 唯一部分索引 + 条件更新 `_id+status=pending` 双重保证）。
 
 ### curl 调用示例（含 JWT）
 
@@ -201,6 +210,25 @@ curl -sS -X POST http://localhost:3003/api/v1/exams/<exam_id>/publish -H "Author
 
 # 6) 健康检查
 curl -sS http://localhost:3003/healthz
+```
+
+成绩复核 curl 示例：
+
+```bash
+# 学生：批改完成 48h 内对本人答卷发起一次复核（record_id 替换为答卷 id）
+curl -sS -X POST http://localhost:3003/api/v1/exam-records/<record_id>/reviews \
+  -H "Authorization: Bearer $STUDENT_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"reason":"主观题第2题我的答案包含关键得分步骤，请复核给分"}'
+
+# 教师：受理并更正总分（意见必填；不改正则不传 corrected_score）
+curl -sS -X POST http://localhost:3003/api/v1/score-reviews/<review_id>/approve \
+  -H "Authorization: Bearer $TEACHER_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"opinion":"经复核第2题补1分","corrected_score":92}'
+
+# 教师：驳回（意见必填，不得携带 corrected_score）
+curl -sS -X POST http://localhost:3003/api/v1/score-reviews/<review_id>/reject \
+  -H "Authorization: Bearer $TEACHER_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"opinion":"评分标准执行正确，维持原分"}'
 ```
 
 ## Docker 部署说明
@@ -248,6 +276,10 @@ curl -sS http://localhost:3003/healthz
 ### 7. 错题本状态 WrongBookStatus（active / resolved）
 后端：`internal/constants/enums.go`、`internal/model/wrong_book.go`、`internal/dto/wrong_book.go`、`internal/service/wrong_book_service.go`、`internal/handler/wrong_book_handler.go`、`internal/constants/log_templates.go`、`internal/util/formatters.go`。
 前端：`src/constants/index.ts`、`src/app/wrongbook/page.tsx`。
+
+### 8. 成绩复核状态 ScoreReviewStatus（none / pending / approved / rejected）+ 状态机
+后端：`internal/constants/enums.go`（含 `ReviewStatusTransitions`、`ReviewApplyWindow=48h`、`ReviewAction*`、`AuditActionReview*`）、`internal/model/score_review.go`、`internal/model/exam_record.go`（`review_id/review_status/score_corrected/graded_at/pass_score`）、`internal/dto/score_review.go`、`internal/dto/exam_record.go`、`internal/repository/score_review_repository.go`、`internal/repository/exam_record_repository.go`（原子条件更新）、`internal/service/score_review_service.go`（48h 窗口/唯一性/越权/状态机）、`internal/service/exam_record_service.go`（批改锁定/报告统计）、`internal/handler/score_review_handler.go`、`internal/handler/exam_record_handler.go`、`internal/router/score_review.go`、`internal/migrations/indexes.go`（唯一部分索引）、`internal/constants/error_codes.go`（8001-8009）、`internal/constants/messages.go`、`internal/constants/log_templates.go`、`internal/util/formatters.go`。
+前端：`src/constants/index.ts`（含 `REVIEW_STATUS_TRANSITIONS`）、`src/utils/format.ts`、`src/types/index.ts`、`src/api/scoreReview.ts`、`src/stores/scoreReviewStore.ts`、`src/components/ScoreReviewPanel.tsx`、`src/app/records/page.tsx`（成绩页）、`src/app/records/review/page.tsx`（批改页）、`src/app/score-reviews/page.tsx`（教师处理列表）、`src/app/reports/page.tsx`（成绩分析）、`src/app/exams/detail/page.tsx`、`src/components/Navbar.tsx`、`src/app/audit/page.tsx`。
 
 ## 屎山代码设计要求（跨文件协同改动能力验证）
 

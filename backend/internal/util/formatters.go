@@ -128,6 +128,36 @@ func UserStatusText(s string) string {
 	return "已禁用"
 }
 
+// ReviewStatusText 成绩复核状态枚举 → 中文文本（pending/approved/rejected，状态机见 constants）。
+func ReviewStatusText(s string) string {
+	switch s {
+	case constants.ReviewStatusNone, "":
+		return "未复核"
+	case constants.ReviewStatusPending:
+		return "复核中"
+	case constants.ReviewStatusApproved:
+		return "已受理"
+	case constants.ReviewStatusRejected:
+		return "已驳回"
+	default:
+		return "未知状态"
+	}
+}
+
+// ReviewActionText 复核留痕动作 → 中文文本。
+func ReviewActionText(a string) string {
+	switch a {
+	case constants.ReviewActionSubmit:
+		return "发起复核"
+	case constants.ReviewActionApprove:
+		return "受理更正"
+	case constants.ReviewActionReject:
+		return "驳回"
+	default:
+		return a
+	}
+}
+
 // ScoreBandText 分数段标签（成绩分析直方图）。
 func ScoreBandText(band int) string {
 	switch band {

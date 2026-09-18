@@ -102,14 +102,14 @@ func (h *ExamRecordHandler) Grade(c *gin.Context) {
 	SuccessMessage(c, constants.MsgRecordGradedSuccess, dto.ToRecordResponse(rec))
 }
 
-// Get 查询单个考试记录。
+// Get 查询单个考试记录（学生仅限本人，教师/管理员可查全部）。
 func (h *ExamRecordHandler) Get(c *gin.Context) {
 	id, err := primitive.ObjectIDFromHex(c.Param("id"))
 	if err != nil {
 		Error(c, util.NewAppError(constants.CodeBadRequest, "考试记录模块：id 参数非法"))
 		return
 	}
-	rec, err := h.svc.GetByID(c.Request.Context(), id)
+	rec, err := h.svc.GetForViewer(c.Request.Context(), id, middleware.GetUserID(c), middleware.GetRole(c))
 	if err != nil {
 		Error(c, err)
 		return

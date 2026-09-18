@@ -25,6 +25,17 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{"exams", bson.D{{Key: "status", Value: 1}, {Key: "subject", Value: 1}}, nil},
 		{"exam_records", bson.D{{Key: "exam_id", Value: 1}, {Key: "student_id", Value: 1}}, nil},
 		{"exam_records", bson.D{{Key: "status", Value: 1}}, nil},
+		{"exam_records", bson.D{{Key: "exam_id", Value: 1}, {Key: "review_status", Value: 1}}, nil},
+		{"exam_records", bson.D{{Key: "student_id", Value: 1}, {Key: "review_status", Value: 1}}, nil},
+		// 成绩复核：record_id 唯一索引兜底“每份答卷至多一条复核”；
+		// 另建 pending 部分唯一索引，确保同一答卷只允许一条待处理申请（并发重复提交在 DB 层拒绝）。
+		{"score_reviews", bson.D{{Key: "record_id", Value: 1}}, options.Index().SetUnique(true)},
+		{"score_reviews", bson.D{{Key: "record_id", Value: 1}, {Key: "status", Value: 1}},
+			options.Index().
+				SetUnique(true).
+				SetPartialFilterExpression(bson.D{{Key: "status", Value: "pending"}})},
+		{"score_reviews", bson.D{{Key: "student_id", Value: 1}, {Key: "status", Value: 1}}, nil},
+		{"score_reviews", bson.D{{Key: "exam_id", Value: 1}, {Key: "status", Value: 1}}, nil},
 		{"wrong_books", bson.D{{Key: "student_id", Value: 1}, {Key: "question_id", Value: 1}}, options.Index().SetUnique(true)},
 		{"audit_logs", bson.D{{Key: "created_at", Value: -1}}, nil},
 		{"audit_logs", bson.D{{Key: "module", Value: 1}, {Key: "action", Value: 1}}, nil},
