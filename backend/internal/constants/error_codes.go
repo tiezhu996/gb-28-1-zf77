@@ -40,6 +40,13 @@ const (
 	CodeRecordExpired     = 5003 // 考试记录已超时
 	CodeRecordAlreadyDone = 5004 // 考试记录已提交
 
+	// 成绩复核模块
+	CodeReviewNotFound     = 5005 // 复核申请不存在
+	CodeReviewWindowClosed = 5006 // 复核申请已超过 48 小时窗口期
+	CodeReviewDuplicate    = 5007 // 同一答卷已存在复核申请（含待处理）
+	CodeReviewNotPending   = 5008 // 复核申请已处理，不可重复处理
+	CodeReviewForbidden    = 5009 // 非本人答卷无权发起复核 / 无权处理他人复核
+
 	// 错题本模块
 	CodeWrongBookNotFound = 6001 // 错题本条目不存在
 	CodeWrongBookExists   = 6002 // 错题已存在错题本
@@ -103,6 +110,16 @@ func ErrorCodeText(code int) string {
 		return "考试记录已超时"
 	case CodeRecordAlreadyDone:
 		return "考试记录已提交"
+	case CodeReviewNotFound:
+		return "成绩复核申请不存在"
+	case CodeReviewWindowClosed:
+		return "成绩复核申请已超过批改完成后的 48 小时窗口期"
+	case CodeReviewDuplicate:
+		return "同一答卷只允许一条复核申请"
+	case CodeReviewNotPending:
+		return "复核申请已处理，不可重复处理"
+	case CodeReviewForbidden:
+		return "无权对该答卷发起或处理复核"
 	case CodeWrongBookNotFound:
 		return "错题本条目不存在"
 	case CodeWrongBookExists:

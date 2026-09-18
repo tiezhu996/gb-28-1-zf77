@@ -71,6 +71,24 @@ export const WRONG_BOOK_STATUS = {
   RESOLVED: 'resolved',
 } as const;
 
+// 成绩复核状态（与后端 constants ScoreReviewStatus 对应）
+export const SCORE_REVIEW_STATUS = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+} as const;
+
+export type ScoreReviewStatus = (typeof SCORE_REVIEW_STATUS)[keyof typeof SCORE_REVIEW_STATUS];
+
+// 复核处理动作（与后端 ScoreReviewAction 对应）
+export const SCORE_REVIEW_ACTION = {
+  APPROVE: 'approve',
+  REJECT: 'reject',
+} as const;
+
+// 复核申请窗口：批改完成后 48 小时（毫秒）
+export const REVIEW_WINDOW_MS = 48 * 60 * 60 * 1000;
+
 export const QUESTION_STATUS = {
   DRAFT: 'draft',
   PUBLISHED: 'published',

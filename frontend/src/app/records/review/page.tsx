@@ -1,12 +1,13 @@
 'use client';
 import { Suspense, useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { recordApi } from '@/api/record';
 import { wrongBookApi } from '@/api/wrongBook';
 import { QuestionTypeBadge, StatusBadge } from '@/components/StatusBadge';
-import { answerResultText, formatDateTime, recordStatusColor, recordStatusText } from '@/utils/format';
-import { ANSWER_RESULT } from '@/constants';
+import { answerResultText, formatDateTime, recordStatusColor, recordStatusText, reviewStatusColor, reviewStatusText } from '@/utils/format';
+import { ANSWER_RESULT, SCORE_REVIEW_STATUS, REVIEW_WINDOW_MS } from '@/constants';
 import type { ExamRecord } from '@/types';
 
 function Review() {
@@ -40,6 +41,8 @@ function Review() {
   }, [load]);
 
   if (!record) return <div className="p-10 text-center text-gray-400">加载中…</div>;
+
+  const inReviewWindow = !!record.graded_at && Date.now() - new Date(record.graded_at).getTime() <= REVIEW_WINDOW_MS;
 
   const resultColor = (r: string) => {
     switch (r) {
@@ -84,12 +87,88 @@ function Review() {
         <div>
           <h1 className="text-xl font-bold text-gray-800">{record.exam_title} · 答卷详情</h1>
           <p className="mt-1 text-sm text-gray-500">
-            学生 {record.student_name} · 客观题 {record.objective_score} 分 · 最终 {record.final_score || '-'} 分 · 切屏 {record.cheat_count} 次
+            学生 {record.student_name} · 客观题 {record.objective_score} 分 ·{' '}
+            最终{' '}
+            <span className={`font-semibold ${record.score_adjusted ? 'text-green-600' : ''}`}>
+              {record.status === 'graded' ? record.effective_score : '-'}
+            </span>
+            {record.score_adjusted && (
+              <span className="ml-1 text-xs text-gray-400 line-through">{record.final_score}</span>
+            )}
+            {' '}分 · 切屏 {record.cheat_count} 次
+            {record.status === 'graded' && (
+              <span className="ml-2">
+                <StatusBadge text={record.passed ? '及格' : '不及格'} color={record.passed ? 'green' : 'red'} />
+              </span>
+            )}
           </p>
-          <p className="text-xs text-gray-400">开始 {formatDateTime(record.started_at)}</p>
+          <p className="text-xs text-gray-400">
+            开始 {formatDateTime(record.started_at)}
+            {record.graded_at ? ` · 批改完成 ${formatDateTime(record.graded_at)}` : ''}
+          </p>
         </div>
-        <StatusBadge text={recordStatusText(record.status)} color={recordStatusColor(record.status)} />
+        <div className="flex items-center gap-2">
+          {record.review && (
+            <StatusBadge text={reviewStatusText(record.review.status)} color={reviewStatusColor(record.review.status)} />
+          )}
+          <StatusBadge text={recordStatusText(record.status)} color={recordStatusColor(record.status)} />
+        </div>
       </div>
+
+      {/* 复核状态条：学生申请/查看，教师前往处理；更正后的最终分数在上方展示 */}
+      {record.status === 'graded' && (
+        <section className="rounded-xl border border-gray-200 bg-white p-4">
+          {record.review ? (
+            <div className="space-y-2 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge text={reviewStatusText(record.review.status)} color={reviewStatusColor(record.review.status)} />
+                <span className="text-gray-500">申请理由：</span>
+                <span>{record.review.reason}</span>
+                <span className="text-xs text-gray-400">{formatDateTime(record.review.created_at)}</span>
+              </div>
+              {record.review.status === SCORE_REVIEW_STATUS.PENDING ? (
+                <p className="text-xs text-orange-600">
+                  {canGrade
+                    ? '该复核正在等待处理，请在「成绩复核处理」页驳回或受理。'
+                    : '复核申请正在处理中，请耐心等待教师意见。'}
+                </p>
+              ) : (
+                <div className="rounded-lg bg-gray-50 p-3">
+                  <p className="text-gray-600">
+                    {record.review.handler_name} 于 {formatDateTime(record.review.handled_at)} 的处理意见：
+                    {record.review.comment}
+                  </p>
+                  {record.review.status === SCORE_REVIEW_STATUS.APPROVED && (
+                    <p className="mt-1 text-green-600">
+                      成绩已更正：{record.review.original_score} → {record.review.corrected_score} 分；
+                      最终及格状态：{record.review.corrected_passed ? '及格' : '不及格'}
+                    </p>
+                  )}
+                </div>
+              )}
+              {canGrade && record.review.status === SCORE_REVIEW_STATUS.PENDING && (
+                <Link href="/reviews" className="inline-block text-sm text-brand-600 hover:underline">前往处理复核 →</Link>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="text-gray-500">
+                {isStudent
+                  ? (inReviewWindow ? '如对成绩有异议，可在批改完成后 48 小时内申请一次复核。' : '已超过批改完成后的 48 小时复核窗口期。')
+                  : '该答卷暂无复核申请。'}
+              </span>
+              {isStudent && inReviewWindow && (
+                <Link href={`/reviews/apply?recordId=${record.id}`} className="rounded-lg bg-orange-600 px-4 py-1.5 text-xs text-white hover:bg-orange-700">申请成绩复核</Link>
+              )}
+            </div>
+          )}
+          {record.adjustment && (
+            <p className="mt-2 text-xs text-gray-400">
+              原始批改明细保留不变，本页题目得分仍为批改时给分；上方“最终分/及格状态”为复核更正后的结果。
+            </p>
+          )}
+        </section>
+      )}
 
       {record.questions.map((q, i) => (
         <div key={q.question_id} className="rounded-xl border border-gray-200 bg-white p-5">

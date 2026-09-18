@@ -137,7 +137,16 @@ function ExamTake() {
     return (
       <div className="mx-auto max-w-md rounded-xl border border-gray-200 bg-white p-8 text-center">
         <h1 className="text-lg font-bold text-gray-800">该答卷已提交</h1>
-        <p className="mt-2 text-sm text-gray-500">最终得分：{record.final_score || record.objective_score}</p>
+        <p className="mt-2 text-sm text-gray-500">
+          最终得分：
+          <span className={record.score_adjusted ? 'font-semibold text-green-600' : ''}>
+            {record.status === 'graded' ? record.effective_score : (record.objective_score)}
+          </span>
+          {record.score_adjusted && (
+            <span className="ml-1 text-xs text-gray-400 line-through">{record.final_score}</span>
+          )}
+          {record.status === 'submitted' && <span className="ml-1 text-xs text-gray-400">（主观题待批改）</span>}
+        </p>
         <button onClick={() => router.push(`/records/review?recordId=${record.id}`)}
           className="mt-4 rounded-lg bg-brand-600 px-4 py-2 text-sm text-white">查看答卷</button>
       </div>

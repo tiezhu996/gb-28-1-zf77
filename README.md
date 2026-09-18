@@ -31,8 +31,9 @@ docker compose up -d --build
 3. **在线考试**：倒计时、题目导航快速跳转、标记稍后作答、最后 5 分钟提醒、时间到自动提交。
 4. **自动阅卷与评分**：客观题（单选/多选/判断）提交即自动判分；主观题（填空/简答）教师手动批改；系统汇总成绩生成成绩报告。
 5. **防作弊机制**：切屏/失焦/复制粘贴检测并记录次数与事件；支持随机打乱题目顺序与选项顺序；禁止复制粘贴。
-6. **成绩分析**：平均分、最高分、最低分、及格率、分数段直方图、每题正确率。
+6. **成绩分析**：平均分、最高分、最低分、及格率、分数段直方图、每题正确率；统计口径采用复核更正后的最终分数，并展示复核待处理/已受理/已驳回统计与更正清单。
 7. **错题回顾**：查看答卷与正确答案对照，错题一键加入错题本，按知识点归类复习。
+8. **成绩复核闭环**：批改完成后 48 小时内学生可对本人成绩发起一次复核并说明理由；同一答卷只允许一条申请，逾期/重复/越权直接拒绝。教师可驳回或受理并更正总分与及格状态，两种处理意见均必填、全程留痕；成绩页、批改页与成绩分析统一展示复核状态与最终分数，原始批改明细保留不变。
 
 ## 技术栈
 
@@ -165,7 +166,13 @@ npm run dev                  # http://localhost:3000，/api 已代理到 localho
 | GET | /exams/:examId/records | 教师/管理员 | 某考试全部答卷 |
 | POST | /exam-records/:id/grade | 教师/管理员 | 主观题批改 |
 | POST | /exam-records/:id/auto-submit | 教师/管理员 | 超时自动提交 |
-| GET | /exams/:examId/report | 教师/管理员 | 成绩分析报告 |
+| GET | /exams/:examId/report | 教师/管理员 | 成绩分析报告（含复核状态与更正统计） |
+| POST | /score-reviews/records/:id | 学生 | 批改完成 48h 内对本人答卷发起成绩复核（一条/卷） |
+| GET | /score-reviews/mine | 学生 | 我的复核申请 |
+| GET | /score-reviews?status= | 教师/管理员 | 复核列表（默认 pending 待处理） |
+| GET | /score-reviews/:id | 教师/管理员 | 复核详情 |
+| POST | /score-reviews/:id/decision | 教师/管理员 | 处理复核：reject 驳回 / approve 受理并更正总分、及格状态（意见必填） |
+| GET | /exam-records/:id/review | 登录 | 按答卷查询复核状态（仅本人/教师） |
 | GET | /wrong-books | 学生 | 错题本分页 |
 | POST | /wrong-books | 学生 | 加入错题本 |
 | GET | /wrong-books/:id | 学生 | 错题详情 |
@@ -201,6 +208,16 @@ curl -sS -X POST http://localhost:3003/api/v1/exams/<exam_id>/publish -H "Author
 
 # 6) 健康检查
 curl -sS http://localhost:3003/healthz
+
+# 7) 学生在批改完成 48h 内发起成绩复核（record_id 替换为答卷 id）
+curl -sS -X POST http://localhost:3003/api/v1/score-reviews/records/<record_id> \
+  -H "Authorization: Bearer $STUDENT_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"reason":"第3题简答题答到得分点但未给分，请复核"}'
+
+# 8) 教师驳回 / 受理并更正总分与及格状态（comment 必填，全程留痕）
+curl -sS -X POST http://localhost:3003/api/v1/score-reviews/<review_id>/decision \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"action":"approve","comment":"标准答案配置错误，更正为85分","corrected_score":85}'
 ```
 
 ## Docker 部署说明
@@ -248,6 +265,10 @@ curl -sS http://localhost:3003/healthz
 ### 7. 错题本状态 WrongBookStatus（active / resolved）
 后端：`internal/constants/enums.go`、`internal/model/wrong_book.go`、`internal/dto/wrong_book.go`、`internal/service/wrong_book_service.go`、`internal/handler/wrong_book_handler.go`、`internal/constants/log_templates.go`、`internal/util/formatters.go`。
 前端：`src/constants/index.ts`、`src/app/wrongbook/page.tsx`。
+
+### 8. 成绩复核状态 ScoreReviewStatus（pending / approved / rejected）+ 动作（approve / reject）+ 状态机
+后端：`internal/constants/enums.go`（含 `ReviewStatusTransitions`、`ReviewApplyWindow=48h`）、`internal/model/score_review.go`、`internal/model/exam_record.go`（`ScoreAdjustment/GradedAt/Adjustment`）、`internal/dto/score_review.go`、`internal/dto/exam_record.go`（`Review/EffectiveScore/ScoreAdjusted/Passed`）、`internal/service/score_review_service.go`、`internal/service/exam_record_service.go`（`EffectiveScore/EffectivePassed/Grade/Report`）、`internal/repository/score_review_repository.go`（`ClaimPending/Finish*/Reopen`）、`internal/handler/score_review_handler.go`、`internal/handler/exam_record_handler.go`、`internal/router/score_review.go`、`internal/migrations/indexes.go`（`record_id` 唯一索引）、`internal/constants/error_codes.go`（5005-5009）、`internal/constants/messages.go`、`internal/constants/log_templates.go`、`internal/util/formatters.go`。
+前端：`src/constants/index.ts`（`SCORE_REVIEW_STATUS/SCORE_REVIEW_ACTION/REVIEW_WINDOW_MS`）、`src/types/index.ts`、`src/utils/format.ts`、`src/api/scoreReview.ts`、`src/stores/scoreReviewStore.ts`、`src/app/reviews/page.tsx`（教师处理）、`src/app/reviews/apply/page.tsx`（学生申请）、`src/app/reviews/mine/page.tsx`、`src/app/records/page.tsx`（成绩页）、`src/app/records/review/page.tsx`（批改页）、`src/app/exams/detail/page.tsx`（考生记录）、`src/app/reports/page.tsx`（成绩分析）、`src/components/Navbar.tsx`。
 
 ## 屎山代码设计要求（跨文件协同改动能力验证）
 

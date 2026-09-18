@@ -9,8 +9,8 @@ import { questionApi } from '@/api/question';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Pagination } from '@/components/Pagination';
 import { StatusBadge } from '@/components/StatusBadge';
-import { examStatusColor, examStatusText, formatDateTime, questionTypeText } from '@/utils/format';
-import { EXAM_STATUS } from '@/constants';
+import { examStatusColor, examStatusText, formatDateTime, questionTypeText, reviewStatusColor, reviewStatusText } from '@/utils/format';
+import { EXAM_STATUS, SCORE_REVIEW_STATUS } from '@/constants';
 import type { Exam, ExamRecord, Question } from '@/types';
 
 function ExamDetail() {
@@ -73,12 +73,52 @@ function ExamDetail() {
     { key: 'student_name', title: '学生', render: (r) => <span>{r.student_name}</span> },
     { key: 'status', title: '状态', render: (r) => <StatusBadge text={r.status === 'graded' ? '已批改' : r.status === 'submitted' ? '已提交' : '答题中'} color={r.status === 'graded' ? 'green' : r.status === 'submitted' ? 'blue' : 'orange'} /> },
     { key: 'objective_score', title: '客观题分', render: (r) => <span>{r.objective_score}</span> },
-    { key: 'final_score', title: '最终分', render: (r) => <span className="font-medium">{r.final_score || '-'}</span> },
+    {
+      key: 'effective_score',
+      title: '最终分',
+      render: (r) => (
+        <span className="inline-flex items-center gap-1">
+          <span className={`font-medium ${r.score_adjusted ? 'text-green-600' : ''}`}>
+            {r.status === 'graded' ? r.effective_score : '-'}
+          </span>
+          {r.score_adjusted && <span className="text-xs text-gray-400 line-through">{r.final_score}</span>}
+        </span>
+      ),
+    },
+    {
+      key: 'passed',
+      title: '及格',
+      render: (r) =>
+        r.status === 'graded' ? (
+          <StatusBadge text={r.passed ? '及格' : '不及格'} color={r.passed ? 'green' : 'red'} />
+        ) : (
+          <span>-</span>
+        ),
+    },
+    {
+      key: 'review',
+      title: '复核状态',
+      render: (r) =>
+        r.review ? (
+          <StatusBadge text={reviewStatusText(r.review.status)} color={reviewStatusColor(r.review.status)} />
+        ) : (
+          <span className="text-xs text-gray-400">-</span>
+        ),
+    },
     { key: 'cheat_count', title: '切屏次数', render: (r) => <span className={r.cheat_count > 0 ? 'text-red-600' : ''}>{r.cheat_count}</span> },
     { key: 'started_at', title: '开始时间', render: (r) => <span className="text-xs">{formatDateTime(r.started_at)}</span> },
-    { key: 'actions', title: '操作', render: (r) => (
-        <button onClick={() => router.push(`/records/review?recordId=${r.id}`)} className="text-brand-600 hover:underline">查看/批改</button>
-      ) },
+    {
+      key: 'actions',
+      title: '操作',
+      render: (r) => (
+        <div className="flex gap-2">
+          <button onClick={() => router.push(`/records/review?recordId=${r.id}`)} className="text-brand-600 hover:underline">查看/批改</button>
+          {r.review?.status === SCORE_REVIEW_STATUS.PENDING && (
+            <button onClick={() => router.push('/reviews')} className="text-orange-600 hover:underline">处理复核</button>
+          )}
+        </div>
+      ),
+    },
   ];
 
   return (

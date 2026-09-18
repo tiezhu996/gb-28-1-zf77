@@ -25,6 +25,11 @@ func EnsureIndexes(ctx context.Context, db *mongo.Database) error {
 		{"exams", bson.D{{Key: "status", Value: 1}, {Key: "subject", Value: 1}}, nil},
 		{"exam_records", bson.D{{Key: "exam_id", Value: 1}, {Key: "student_id", Value: 1}}, nil},
 		{"exam_records", bson.D{{Key: "status", Value: 1}}, nil},
+		// 同一答卷只允许一条复核申请：record_id 唯一索引兜底并发重复提交（待处理/终态都占坑）
+		{"score_reviews", bson.D{{Key: "record_id", Value: 1}}, options.Index().SetUnique(true)},
+		{"score_reviews", bson.D{{Key: "status", Value: 1}, {Key: "created_at", Value: -1}}, nil},
+		{"score_reviews", bson.D{{Key: "student_id", Value: 1}, {Key: "created_at", Value: -1}}, nil},
+		{"score_reviews", bson.D{{Key: "exam_id", Value: 1}}, nil},
 		{"wrong_books", bson.D{{Key: "student_id", Value: 1}, {Key: "question_id", Value: 1}}, options.Index().SetUnique(true)},
 		{"audit_logs", bson.D{{Key: "created_at", Value: -1}}, nil},
 		{"audit_logs", bson.D{{Key: "module", Value: 1}, {Key: "action", Value: 1}}, nil},

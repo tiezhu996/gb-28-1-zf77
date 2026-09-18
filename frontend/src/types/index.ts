@@ -86,6 +86,19 @@ export interface AttemptQuestion {
   marked?: boolean;
 }
 
+export interface ScoreAdjustment {
+  review_id: string;
+  operator_id: string;
+  operator_name: string;
+  original_score: number;
+  corrected_score: number;
+  original_passed: boolean;
+  corrected_passed: boolean;
+  passed_override?: boolean | null;
+  comment: string;
+  created_at: string;
+}
+
 export interface ExamRecord {
   id: string;
   exam_id: string;
@@ -95,14 +108,59 @@ export interface ExamRecord {
   status: string;
   started_at: string;
   submitted_at?: string | null;
+  graded_at?: string | null;
   objective_score: number;
   subjective_score: number;
   final_score: number;
+  effective_score: number;
+  score_adjusted: boolean;
   pass_score: number;
+  passed: boolean;
+  adjustment?: ScoreAdjustment | null;
+  review?: ScoreReview | null;
   cheat_count: number;
   auto_submitted: boolean;
   questions: AttemptQuestion[];
   created_at: string;
+}
+
+export interface ScoreReview {
+  id: string;
+  record_id: string;
+  exam_id: string;
+  exam_title: string;
+  student_id: string;
+  student_name: string;
+  reason: string;
+  status: string;
+  status_text: string;
+  original_score: number;
+  corrected_score: number;
+  original_passed: boolean;
+  corrected_passed: boolean;
+  passed_override?: boolean | null;
+  decision?: string;
+  comment?: string;
+  handler_name?: string;
+  handled_at?: string | null;
+  created_at: string;
+}
+
+export interface AdjustedRecord {
+  record_id: string;
+  student_name: string;
+  original_score: number;
+  corrected_score: number;
+  corrected_passed: boolean;
+  comment: string;
+}
+
+export interface ReviewStats {
+  total_count: number;
+  pending_count: number;
+  approved_count: number;
+  rejected_count: number;
+  adjusted_records: AdjustedRecord[];
 }
 
 export interface WrongBook {
@@ -155,4 +213,5 @@ export interface ExamReport {
     correct_count: number;
     accuracy: number;
   }[];
+  review_stats?: ReviewStats | null;
 }

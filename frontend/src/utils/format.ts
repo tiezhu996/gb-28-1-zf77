@@ -6,6 +6,7 @@ import {
   QUESTION_TYPES,
   RECORD_STATUS,
   ROLES,
+  SCORE_REVIEW_STATUS,
   USER_STATUS,
 } from '@/constants';
 
@@ -96,6 +97,25 @@ export function recordStatusColor(s: string): string {
     case RECORD_STATUS.IN_PROGRESS: return 'orange';
     case RECORD_STATUS.SUBMITTED: return 'blue';
     case RECORD_STATUS.GRADED: return 'green';
+    default: return 'gray';
+  }
+}
+
+// 成绩复核状态文案/颜色（与后端 util/formatters.go ReviewStatusText 对应）
+export function reviewStatusText(s: string): string {
+  switch (s) {
+    case SCORE_REVIEW_STATUS.PENDING: return '复核待处理';
+    case SCORE_REVIEW_STATUS.APPROVED: return '复核已受理';
+    case SCORE_REVIEW_STATUS.REJECTED: return '复核已驳回';
+    default: return s;
+  }
+}
+
+export function reviewStatusColor(s: string): string {
+  switch (s) {
+    case SCORE_REVIEW_STATUS.PENDING: return 'orange';
+    case SCORE_REVIEW_STATUS.APPROVED: return 'green';
+    case SCORE_REVIEW_STATUS.REJECTED: return 'red';
     default: return 'gray';
   }
 }

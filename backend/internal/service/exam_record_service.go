@@ -207,6 +207,11 @@ func (s *ExamRecordService) Grade(ctx context.Context, recordID primitive.Object
 	if rec.Status != constants.RecordStatusSubmitted && rec.Status != constants.RecordStatusGraded {
 		return nil, util.NewAppError(constants.CodeRecordStatusErr, fmt.Sprintf(constants.MsgRecordStatusInvalid, rec.Status))
 	}
+	// 复核已受理更正的成绩为最终结果，禁止再次批改覆盖，保证复核闭环与留痕一致。
+	if rec.Adjustment != nil {
+		return nil, util.NewAppError(constants.CodeRecordStatusErr,
+			fmt.Sprintf("考试记录模块：record_id=%s 已通过成绩复核受理更正，最终成绩锁定，不可再次批改", recordID.Hex()))
+	}
 	gradeMap := make(map[string]dto.GradeItem, len(grades))
 	for _, g := range grades {
 		gradeMap[g.QuestionID] = g
@@ -229,7 +234,16 @@ func (s *ExamRecordService) Grade(ctx context.Context, recordID primitive.Object
 	rec.SubjectiveScore = subjectiveTotal
 	rec.FinalScore = rec.ObjectiveScore + subjectiveTotal
 	rec.Status = constants.RecordStatusGraded
-	rec.UpdatedAt = time.Now()
+	now := time.Now()
+	// GradedAt 仅在首次批改完成时写入，作为成绩复核 48 小时窗口的锚点；重复批改不重置窗口。
+	if rec.GradedAt == nil {
+		rec.GradedAt = &now
+	}
+	// 快照试卷及格分，供复核窗口外的及格状态判定与教师更正使用。
+	if exam, examErr := s.exam.GetByID(ctx, rec.ExamID); examErr == nil {
+		rec.PassScore = exam.PassScore
+	}
+	rec.UpdatedAt = now
 	if err := s.repo.Update(ctx, rec); err != nil {
 		return nil, fmt.Errorf("exam record service grade: %w", err)
 	}
@@ -270,19 +284,20 @@ func (s *ExamRecordService) GetByID(ctx context.Context, id primitive.ObjectID) 
 }
 
 // Report 生成成绩分析报告（平均分/最高/最低/及格率/分数段/每题正确率）。
+// 统计口径：已批改（graded）答卷；若成绩经复核受理更正，FinalScore/Passed 为更正后的最终结果。
 func (s *ExamRecordService) Report(ctx context.Context, examID primitive.ObjectID) (*dto.ExamReport, error) {
 	exam, err := s.exam.GetByID(ctx, examID)
 	if err != nil {
 		return nil, err
 	}
-	recs, err := s.repo.ListAll(ctx, bson.M{"exam_id": examID, "status": bson.M{"$in": []string{constants.RecordStatusSubmitted, constants.RecordStatusGraded}}})
+	recs, err := s.repo.ListAll(ctx, bson.M{"exam_id": examID, "status": constants.RecordStatusGraded})
 	if err != nil {
 		return nil, fmt.Errorf("exam record service report: %w", err)
 	}
 	report := &dto.ExamReport{
-		ExamID:       examID.Hex(),
-		ExamTitle:    exam.Title,
-		ScoreBands:   map[string]int{"0-59": 0, "60-69": 0, "70-79": 0, "80-89": 0, "90-100": 0},
+		ExamID:          examID.Hex(),
+		ExamTitle:       exam.Title,
+		ScoreBands:      map[string]int{"0-59": 0, "60-69": 0, "70-79": 0, "80-89": 0, "90-100": 0},
 		QuestionReports: make([]dto.ExamReportItem, 0, len(exam.Questions)),
 	}
 	if len(recs) == 0 {
@@ -295,19 +310,15 @@ func (s *ExamRecordService) Report(ctx context.Context, examID primitive.ObjectI
 	passCount := 0
 	for _, r := range recs {
 		score := r.FinalScore
-		if score <= 0 && r.Status == constants.RecordStatusSubmitted {
-			score = r.ObjectiveScore
-		}
-		if score > 0 {
-			sum += score
-		}
+		sum += score
 		if score > maxScore {
 			maxScore = score
 		}
 		if minScore < 0 || score < minScore {
 			minScore = score
 		}
-		if score >= exam.PassScore && exam.PassScore > 0 {
+		// 及格状态：复核受理后以更正结果为准；否则按总分与及格线判定。
+		if EffectivePassed(r) {
 			passCount++
 		}
 		band := scoreBand(score)
@@ -409,4 +420,27 @@ func scoreBand(score float64) string {
 
 func round2(v float64) float64 {
 	return float64(int(v*100+0.5)) / 100
+}
+
+// EffectiveScore 返回答卷当前生效总分：复核受理更正后返回更正分，否则返回批改总分。
+// 成绩页、批改页、成绩分析统一通过该函数读取，确保复核更正后原成绩明细保留、展示用最终分。
+func EffectiveScore(r *model.ExamRecord) float64 {
+	if r.Adjustment != nil {
+		return r.Adjustment.CorrectedScore
+	}
+	return r.FinalScore
+}
+
+// EffectivePassed 返回答卷当前生效的及格状态：复核受理以教师更正结果为准，
+// 否则按生效总分与快照及格线判定。
+func EffectivePassed(r *model.ExamRecord) bool {
+	if r.Adjustment != nil {
+		return r.Adjustment.CorrectedPassed
+	}
+	return r.PassScore > 0 && r.FinalScore >= r.PassScore
+}
+
+// IsAdjusted 答卷是否经过复核受理更正。
+func IsAdjusted(r *model.ExamRecord) bool {
+	return r.Adjustment != nil
 }

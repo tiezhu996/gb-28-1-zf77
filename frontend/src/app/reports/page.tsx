@@ -28,6 +28,8 @@ function Report() {
     { label: '及格率', value: `${report.pass_rate}%` },
   ];
 
+  const review = report.review_stats;
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold text-gray-800">成绩分析 · {report.exam_title}</h1>
@@ -40,6 +42,52 @@ function Report() {
           </div>
         ))}
       </section>
+
+      {review && review.total_count > 0 && (
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-semibold text-gray-800">成绩复核统计</h2>
+            <p className="text-xs text-gray-400">平均分/及格率/分数段均已按复核更正后的最终分数计算</p>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="rounded-lg bg-gray-50 p-3 text-center">
+              <p className="text-xs text-gray-400">复核总数</p>
+              <p className="mt-1 text-xl font-bold text-gray-700">{review.total_count}</p>
+            </div>
+            <div className="rounded-lg bg-orange-50 p-3 text-center">
+              <p className="text-xs text-orange-400">待处理</p>
+              <p className="mt-1 text-xl font-bold text-orange-600">{review.pending_count}</p>
+            </div>
+            <div className="rounded-lg bg-green-50 p-3 text-center">
+              <p className="text-xs text-green-400">已受理（更正）</p>
+              <p className="mt-1 text-xl font-bold text-green-600">{review.approved_count}</p>
+            </div>
+            <div className="rounded-lg bg-red-50 p-3 text-center">
+              <p className="text-xs text-red-400">已驳回</p>
+              <p className="mt-1 text-xl font-bold text-red-600">{review.rejected_count}</p>
+            </div>
+          </div>
+          {review.adjusted_records.length > 0 && (
+            <div className="mt-4">
+              <h3 className="text-sm font-medium text-gray-700">经复核更正的成绩</h3>
+              <div className="mt-2 space-y-2">
+                {review.adjusted_records.map((a) => (
+                  <div key={a.record_id} className="flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 px-3 py-2 text-sm">
+                    <span className="w-24 shrink-0">{a.student_name}</span>
+                    <span className="text-gray-400 line-through">{a.original_score}</span>
+                    <span className="text-gray-400">→</span>
+                    <span className="font-semibold text-green-600">{a.corrected_score}</span>
+                    <span className={`text-xs ${a.corrected_passed ? 'text-green-600' : 'text-red-600'}`}>
+                      {a.corrected_passed ? '及格' : '不及格'}
+                    </span>
+                    <span className="flex-1 truncate text-xs text-gray-400">{a.comment}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="rounded-xl border border-gray-200 bg-white p-5">
         <h2 className="font-semibold text-gray-800">分数段分布</h2>

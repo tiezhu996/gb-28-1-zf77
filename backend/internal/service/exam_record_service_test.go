@@ -176,6 +176,10 @@ func TestReport(t *testing.T) {
 
 	rec, _ := svc.StartExam(context.Background(), exam.ID, student, "李同学")
 	_, _ = svc.Submit(context.Background(), rec.ID, []dto.AnswerInput{{QuestionID: q1.ID.Hex(), Answer: "B"}}, 0, nil, false)
+	// 报告仅统计已批改答卷：完成一次批改（全客观题，主观题给分为空）
+	if _, err := svc.Grade(context.Background(), rec.ID, nil, "t@example.com"); err != nil {
+		t.Fatalf("Grade() error = %v", err)
+	}
 
 	report, err := svc.Report(context.Background(), exam.ID)
 	if err != nil {
@@ -186,5 +190,8 @@ func TestReport(t *testing.T) {
 	}
 	if report.MaxScore != 5 {
 		t.Fatalf("max score = %f, want 5", report.MaxScore)
+	}
+	if report.PassRate != 100 {
+		t.Fatalf("pass rate = %f, want 100", report.PassRate)
 	}
 }

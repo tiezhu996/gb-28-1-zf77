@@ -19,8 +19,8 @@ type AnswerInput struct {
 
 // SubmitRecordRequest 提交答卷请求。
 type SubmitRecordRequest struct {
-	Answers    []AnswerInput `json:"answers" binding:"required,min=1"`
-	CheatCount int           `json:"cheat_count" binding:"omitempty,min=0,max=1000"`
+	Answers     []AnswerInput     `json:"answers" binding:"required,min=1"`
+	CheatCount  int               `json:"cheat_count" binding:"omitempty,min=0,max=1000"`
 	CheatEvents []CheatEventInput `json:"cheat_events"`
 }
 
@@ -63,40 +63,47 @@ type ExamReportItem struct {
 
 // ExamReport 成绩分析报告。
 type ExamReport struct {
-	ExamID          string            `json:"exam_id"`
-	ExamTitle       string            `json:"exam_title"`
-	TotalStudents   int               `json:"total_students"`
-	AverageScore    float64           `json:"average_score"`
-	MaxScore        float64           `json:"max_score"`
-	MinScore        float64           `json:"min_score"`
-	PassRate        float64           `json:"pass_rate"`
-	ScoreBands      map[string]int    `json:"score_bands"` // 分数段直方图
-	QuestionReports []ExamReportItem  `json:"question_reports"`
+	ExamID          string           `json:"exam_id"`
+	ExamTitle       string           `json:"exam_title"`
+	TotalStudents   int              `json:"total_students"`
+	AverageScore    float64          `json:"average_score"`
+	MaxScore        float64          `json:"max_score"`
+	MinScore        float64          `json:"min_score"`
+	PassRate        float64          `json:"pass_rate"`
+	ScoreBands      map[string]int   `json:"score_bands"` // 分数段直方图
+	QuestionReports []ExamReportItem `json:"question_reports"`
+	ReviewStats     *ReviewStats     `json:"review_stats,omitempty"` // 复核状态与更正统计
 }
 
 // RecordResponse 考试记录响应。
 type RecordResponse struct {
-	ID              string                    `json:"id"`
-	ExamID          string                    `json:"exam_id"`
-	ExamTitle       string                    `json:"exam_title"`
-	StudentID       string                    `json:"student_id"`
-	StudentName     string                    `json:"student_name"`
-	Status          string                    `json:"status"`
-	StartedAt       time.Time                 `json:"started_at"`
-	SubmittedAt     *time.Time                `json:"submitted_at"`
-	ObjectiveScore  float64                   `json:"objective_score"`
-	SubjectiveScore float64                   `json:"subjective_score"`
-	FinalScore      float64                   `json:"final_score"`
-	PassScore       float64                   `json:"pass_score"`
-	CheatCount      int                       `json:"cheat_count"`
-	AutoSubmitted   bool                      `json:"auto_submitted"`
-	Questions       []model.AttemptQuestion   `json:"questions"`
-	CreatedAt       time.Time                 `json:"created_at"`
+	ID              string                  `json:"id"`
+	ExamID          string                  `json:"exam_id"`
+	ExamTitle       string                  `json:"exam_title"`
+	StudentID       string                  `json:"student_id"`
+	StudentName     string                  `json:"student_name"`
+	Status          string                  `json:"status"`
+	StartedAt       time.Time               `json:"started_at"`
+	SubmittedAt     *time.Time              `json:"submitted_at"`
+	GradedAt        *time.Time              `json:"graded_at,omitempty"`
+	ObjectiveScore  float64                 `json:"objective_score"`
+	SubjectiveScore float64                 `json:"subjective_score"`
+	FinalScore      float64                 `json:"final_score"`     // 原始批改总分（保留留痕）
+	EffectiveScore  float64                 `json:"effective_score"` // 当前生效总分（复核受理后为更正分）
+	ScoreAdjusted   bool                    `json:"score_adjusted"`
+	PassScore       float64                 `json:"pass_score"`
+	Passed          bool                    `json:"passed"` // 当前生效及格状态（复核更正后以教师结果为准）
+	Adjustment      *model.ScoreAdjustment  `json:"adjustment,omitempty"`
+	Review          *ReviewResponse         `json:"review,omitempty"` // 复核状态（成绩页/批改页展示）
+	CheatCount      int                     `json:"cheat_count"`
+	AutoSubmitted   bool                    `json:"auto_submitted"`
+	Questions       []model.AttemptQuestion `json:"questions"`
+	CreatedAt       time.Time               `json:"created_at"`
 }
 
-// ToRecordResponse 模型转响应。
+// ToRecordResponse 模型转响应（不含复核信息，列表场景由 handler 批量拼装 Review）。
 func ToRecordResponse(r *model.ExamRecord) RecordResponse {
-	return RecordResponse{
+	resp := RecordResponse{
 		ID:              r.ID.Hex(),
 		ExamID:          r.ExamID.Hex(),
 		ExamTitle:       r.ExamTitle,
@@ -105,12 +112,33 @@ func ToRecordResponse(r *model.ExamRecord) RecordResponse {
 		Status:          r.Status,
 		StartedAt:       r.StartedAt,
 		SubmittedAt:     r.SubmittedAt,
+		GradedAt:        r.GradedAt,
 		ObjectiveScore:  r.ObjectiveScore,
 		SubjectiveScore: r.SubjectiveScore,
 		FinalScore:      r.FinalScore,
+		EffectiveScore:  r.FinalScore,
+		PassScore:       r.PassScore,
+		Passed:          r.PassScore > 0 && r.FinalScore >= r.PassScore,
 		CheatCount:      r.CheatCount,
 		AutoSubmitted:   r.AutoSubmitted,
 		Questions:       r.Questions,
 		CreatedAt:       r.CreatedAt,
 	}
+	if r.Adjustment != nil {
+		resp.Adjustment = r.Adjustment
+		resp.ScoreAdjusted = true
+		resp.EffectiveScore = r.Adjustment.CorrectedScore
+		resp.Passed = r.Adjustment.CorrectedPassed
+	}
+	return resp
+}
+
+// AttachReview 将复核申请拼到记录响应上（成绩页/批改页展示复核状态与最终分数）。
+func AttachReview(resp RecordResponse, rv *model.ScoreReview) RecordResponse {
+	if rv == nil {
+		return resp
+	}
+	rvDTO := ToReviewResponse(rv)
+	resp.Review = &rvDTO
+	return resp
 }
